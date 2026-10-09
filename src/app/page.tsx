@@ -1,11 +1,11 @@
 'use client';
 import { useState, useEffect  } from 'react';
 import "./styles.css";
-import { Button, Modal } from 'antd'; //InputNumber,
+import { Button, Modal, Spin, Empty } from 'antd'; //InputNumber,
 import ItemBox from "@/src/app/components/ItemBox"
 import CartModal from "@/src/app/components/CartModal";
-import type { ProductItem, AddQtyItem, CartItems } from "@/src/app/types/product";
-import { ShoppingCartOutlined } from '@ant-design/icons';
+import type { ProductItem, AddQtyItem, CartItems, ShoppingOrder } from "@/src/app/types/product";
+import { ShoppingCartOutlined, HistoryOutlined } from '@ant-design/icons';
 
 const ProductsPage = () => {
   const [products, setProducts] = useState<ProductItem[]>([]);
@@ -14,6 +14,9 @@ const ProductsPage = () => {
   const [openModalOverQty, setOpenModalOverQty] = useState(false);
   const [openModalCart, setOpenModalCart] = useState(false);
   const [openConfirmCheckOutDialog, setOpenConfirmCheckOutDialog] = useState(false);
+  const [openOrderHistory, setOpenOrderHistory] = useState(false);
+  const [shoppingOrders, setShoppingOrders] = useState<ShoppingOrder[]>([]);
+  const [loadingOrderHistory, setLoadingOrderHistory] = useState(false);
 
   const [loadingCart, setLoadingCart] = useState(false);
 
@@ -35,39 +38,11 @@ const ProductsPage = () => {
     });
   }
 
-  // const updateData = async (payload: AddQtyItem[]) => {
-  //   fetch(API_URL + 'api/products/update-stock', {
-  //     method: 'POST',
-  //     headers: {
-  //       'Content-Type': 'application/json',
-  //     },
-  //     body: JSON.stringify(payload)
-  //   }).then(async (result) => {
-  //   if (!result.ok) {
-  //     const errorText = await result.text();
-  //     throw new Error(errorText || 'Cannot update stock!');
-  //   }
-  //   return result.json();
-  // })
-  //   .then(() => {
-  //     setInCartItems([]);
-  //     setProducts([]);
-  //     setOpenModalCart(false);
-  //     setOpenConfirmCheckOutDialog(false);
-  //     getData(); 
-  //   })
-  //   .catch((err) => {
-  //     alert(err.message);
-  //   });
-  // };
-
   const getShoppingCart = async () => {
 
     try {
       setLoadingCart(true);
-      const result = await fetch(
-        API_URL + 'api/products/shopping-cart'
-      );
+      const result = await fetch(API_URL + 'api/products/shopping-cart');
 
       if (!result.ok) {
 
@@ -96,12 +71,33 @@ const ProductsPage = () => {
 
     }
   };
+
+  const getShoppingOrder = async () => {
+    try {
+      setLoadingOrderHistory(true);
+
+      const result = await fetch(API_URL + 'api/products/shopping-order');
+
+      if (!result.ok) {
+        const errorText = await result.text();
+        throw new Error(errorText || 'Cannot get shopping order!');
+      }
+      const data = await result.json();
+      setShoppingOrders(data);
+
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : 'Cannot get shopping order!');
+    } finally {
+      setLoadingOrderHistory(false);
+    }
+  };
   
   useEffect(() => {
     const loadData = async () => {
       await Promise.all([
         getData(),
-        getShoppingCart()
+        getShoppingCart(),
+        //getShoppingOrder()
       ]);
     };
 
@@ -169,14 +165,11 @@ const ProductsPage = () => {
     value: number,
     item: CartItems
   ) => {
-
     try {
 
       const result = await fetch(
         API_URL +
-        `api/products/shopping-cart/${encodeURIComponent(
-          item.productId
-        )}`,
+        `api/products/shopping-cart/${item.productId}`,
         {
           method: 'PUT',
           headers: {
@@ -198,16 +191,10 @@ const ProductsPage = () => {
           'Cannot update cart!'
         );
       }
-
-      // โหลดข้อมูลล่าสุดจาก DB
       await getShoppingCart();
-
     } catch (err) {
-
       console.error(err);
-      setOpenModalOverQty(true);
-
-      // เอาค่าจริงจาก DB กลับมา
+      setOpenModalOverQty(true)
       await getShoppingCart();
     }
   };
@@ -232,9 +219,7 @@ const ProductsPage = () => {
 
       const result = await fetch(
         API_URL +
-        `api/products/shopping-cart/${encodeURIComponent(
-          item.productId
-        )}`,
+        `api/products/shopping-cart/${item.productId}`,
         {
           method: 'DELETE'
         }
@@ -245,10 +230,7 @@ const ProductsPage = () => {
         const errorText =
           await result.text();
 
-        throw new Error(
-          errorText ||
-          'Cannot remove item!'
-        );
+        throw new Error(errorText || 'Cannot remove item!');
       }
 
       await getShoppingCart();
@@ -314,7 +296,6 @@ const ProductsPage = () => {
         throw new Error(errorData?.message || 'Checkout failed!');
       }
 
-      // Checkout สำเร็จ
       setInCartItems([]);
       setQtyItem([]);
 
@@ -323,17 +304,9 @@ const ProductsPage = () => {
 
       // โหลด stock ใหม่
       getData();
-
     } 
     catch (err) {
-
-      alert(
-        err instanceof Error
-          ? err.message
-          : 'Checkout failed!'
-      );
-
-      // กรณี stock เปลี่ยนระหว่างรอ checkout
+      alert(err instanceof Error ? err.message : 'Checkout failed!');
       await getShoppingCart();
     }
   };
@@ -362,17 +335,30 @@ const ProductsPage = () => {
     }
   }
 
+  const handleOpenOrderHistory = async () => {
+    setOpenOrderHistory(true);
+    await getShoppingOrder();
+  };
+
   return (
     <div className='products-container '>
       <div className="header-row">
         <h1 className="title">Product & Stock System.</h1>
-        <Button
-          onClick={async () => {
-            setOpenModalCart(true);
-            await getShoppingCart();
-          }} loading={loadingCart}>
-          <ShoppingCartOutlined /> My Cart ({inCartItems.length})
-        </Button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <Button
+            icon={<HistoryOutlined />}
+            onClick={handleOpenOrderHistory}
+          >
+            Order History
+          </Button>
+          <Button
+            onClick={async () => {
+              setOpenModalCart(true);
+              await getShoppingCart();
+            }} loading={loadingCart}>
+            <ShoppingCartOutlined /> My Cart ({inCartItems.length})
+          </Button>
+        </div>
         
       </div>
 
@@ -410,6 +396,117 @@ const ProductsPage = () => {
           width={500}
         >
           <h2>ยอดรวมทั้งหมดที่ต้องชำระ {renderTotalPrice()} บาท</h2>
+        </Modal>
+
+        <Modal
+          title="ประวัติการสั่งซื้อ"
+          centered
+          open={openOrderHistory}
+          onCancel={() => setOpenOrderHistory(false)}
+          footer={null}
+          width={900}
+        >
+          {loadingOrderHistory ? (
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                padding: '30px'
+              }}
+            >
+              <Spin />
+            </div>
+          ) : shoppingOrders.length === 0 ? (
+            <Empty description="ยังไม่มีประวัติการสั่งซื้อ" />
+          ) : (
+            <div
+              style={{
+                maxHeight: '500px',
+                overflowY: 'auto'
+              }}
+            >
+              {shoppingOrders.map((order) => {
+                const product = products.find((p) => p.productId === order.productId);
+                return (
+                  <div
+                    key={order.orderId}
+                    style={{
+                      borderBottom: '1px solid #eee',
+                      padding: '14px 0'
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontWeight: 'bold',
+                            fontSize: '16px'
+                          }}
+                        >
+                          Order #{order.orderId}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: '5px'
+                          }}
+                        >
+                          {product?.productName ??
+                            order.productName}
+                        </div>
+                        <div
+                          style={{
+                            color: '#888',
+                            fontSize: '13px',
+                            marginTop: '4px'
+                          }}
+                        >
+                          Product ID: {order.productId}
+                        </div>
+
+                      </div>
+
+                      <div
+                        style={{
+                          textAlign: 'right'
+                        }}
+                      >
+
+                        <div>
+                          จำนวน{' '}
+                          <strong>
+                            {order.qty}
+                          </strong>
+                        </div>
+
+                        <div>
+                          ยอดรวม{' '}
+                          <strong>
+                            {order.totalPrice}
+                          </strong>
+                        </div>
+
+                        <div
+                          style={{
+                            color: '#888',
+                            fontSize: '13px',
+                            marginTop: '5px'
+                          }}
+                        >
+                          {new Date(order.orderDate).toLocaleString('th-TH')}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </Modal>
     </div>
 
